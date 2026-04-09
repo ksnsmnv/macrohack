@@ -1,4 +1,18 @@
-# Планы на будущее:
+# DONE 09.04 8am:
+
+- VAR (with exogenous and endogenous predictors)   => type ONE is better
+- ARIMA + ARIMAX                                   => probably ARIMA, but rethink
+- AR + ARX                                         (ARIMA is better)
+
+# To be done:
+- Reconsider macros - why?
+  - VAR gets higher above the actual
+  - ARIMA gets higher at higher maturity
+
+
+
+
+# Планы на будущее 08.04 8am:
 
 ### Доп данные
 - есть пропуски в ожиданиях инфляции - как заполнить ?
