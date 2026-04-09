@@ -719,7 +719,7 @@ def plot_cv_test_rmse(fold_results):
     plt.grid(True, alpha=0.3)
     plt.legend()
     plt.tight_layout()
-    plt.savefig("cv_test_rmse_4_models.png", dpi=150)
+    plt.savefig("plot/cv_test_rmse_4_models.png", dpi=150)
     plt.show()
 
 
@@ -738,7 +738,7 @@ def plot_overfit_gap(fold_results):
     plt.grid(True, alpha=0.3)
     plt.legend()
     plt.tight_layout()
-    plt.savefig("cv_overfit_gap_4_models.png", dpi=150)
+    plt.savefig("plot/cv_overfit_gap_4_models.png", dpi=150)
     plt.show()
 
 
@@ -818,10 +818,10 @@ def main():
     plot_overfit_gap(fold_results)
 
     fold_table = build_fold_table(fold_results)
-    fold_table.to_csv("cv_fold_results_4_models.csv", index=False)
+    # fold_table.to_csv("cv_fold_results_4_models.csv", index=False)
 
     summary_table = build_summary_table(summary, beta_cols)
-    summary_table.to_csv("cv_summary_4_models.csv", index=False)
+    # summary_table.to_csv("cv_summary_4_models.csv", index=False)
 
     final_forecast = fit_best_and_forecast(
         best_model_name=best_model_name,
@@ -835,7 +835,7 @@ def main():
     print("\nФинальный прогноз лучшей модели:")
     print(final_forecast)
 
-    final_forecast.to_csv(f"beta_forecast_best_{best_model_name}.csv", index=True)
+    final_forecast.to_csv(f"forecast/beta_forecast_best_{best_model_name}.csv", index=True)
 
     print("\nФайлы сохранены:")
     print("- cv_fold_results_4_models.csv")

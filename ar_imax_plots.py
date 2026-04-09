@@ -487,7 +487,7 @@ for beta in beta_cols:
     plt.grid(True, alpha=0.3)
     plt.legend()
     plt.tight_layout()
-    plt.savefig(f"forecast_{beta}_with_ci.png", dpi=160)
+    plt.savefig(f"plot/forecast_{beta}_with_ci.png", dpi=160)
     plt.show()
 
 
@@ -541,7 +541,7 @@ for dt in test_idx:
     plt.grid(True, alpha=0.3)
     plt.legend()
     plt.tight_layout()
-    plt.savefig(f"yield_curve_forecast_{dt.strftime('%Y_%m_%d')}.png", dpi=160)
+    plt.savefig(f"plot/yield_curve_forecast_{dt.strftime('%Y_%m_%d')}.png", dpi=160)
     plt.show()
 
 
@@ -549,25 +549,25 @@ for dt in test_idx:
 # 10. СОХРАНЕНИЕ РЕЗУЛЬТАТОВ
 # =========================================================
 
-df_beta_mean.to_csv("arimax_beta_forecast_mean.csv")
-df_beta_lower.to_csv("arimax_beta_forecast_lower.csv")
-df_beta_upper.to_csv("arimax_beta_forecast_upper.csv")
+df_beta_mean.to_csv("forecast/arimax_beta_forecast_mean.csv")
+# df_beta_lower.to_csv("forecast/arimax_beta_forecast_lower.csv")
+# df_beta_upper.to_csv("forecast/arimax_beta_forecast_upper.csv")
 
-df_yc_pred_mean.to_csv("arimax_yield_curve_forecast_mean.csv")
-df_yc_pred_lower.to_csv("arimax_yield_curve_forecast_lower.csv")
-df_yc_pred_upper.to_csv("arimax_yield_curve_forecast_upper.csv")
+df_yc_pred_mean.to_csv("forecast/arimax_yield_curve_forecast_mean.csv")
+# df_yc_pred_lower.to_csv("forecast/arimax_yield_curve_forecast_lower.csv")
+# df_yc_pred_upper.to_csv("forecast/arimax_yield_curve_forecast_upper.csv")
 
 summary_beta = pd.DataFrame({
     "beta": list(rmse_beta_test.keys()) + ["AVG"],
     "rmse_beta": list(rmse_beta_test.values()) + [avg_rmse_beta_test]
 })
-summary_beta.to_csv("arimax_rmse_beta.csv", index=False)
+summary_beta.to_csv("forecast/arimax_rmse_beta.csv", index=False)
 
 summary_yc = pd.DataFrame({
     "maturity": list(rmse_yc_by_maturity.keys()) + ["OVERALL"],
     "rmse_yield_curve": list(rmse_yc_by_maturity.values()) + [overall_yc_rmse]
 })
-summary_yc.to_csv("arimax_rmse_yield_curve.csv", index=False)
+summary_yc.to_csv("forecast/arimax_rmse_yield_curve.csv", index=False)
 
 print("\nФайлы сохранены:")
 print("- arimax_beta_forecast_mean.csv")
