@@ -721,7 +721,7 @@ def plot_yc_block(yc_actual, yc_forecast, title_prefix, yc_cols=yc_cols):
         plt.tight_layout()
         plt.show()
 
-plot_yc_block(yc_test_actual, yc_var1_m1_test, "VAR type 1 | M1 no IV")
-plot_yc_block(yc_test_actual, yc_var1_m2_test, "VAR type 1 | M2 with IV")
+# plot_yc_block(yc_test_actual, yc_var1_m1_test, "VAR type 1 | M1 no IV")
+# plot_yc_block(yc_test_actual, yc_var1_m2_test, "VAR type 1 | M2 with IV")
 # plot_yc_block(yc_test_actual, yc_var2_m1_test, "VAR type 2 | M1 no IV")
 # plot_yc_block(yc_test_actual, yc_var2_m2_test, "VAR type 2 | M2 with IV")
