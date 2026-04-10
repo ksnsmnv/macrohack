@@ -1,0 +1,58 @@
+project:
+  output_dir: outputs
+  submission_path: Problem_1_yield_curve_predict.xlsx
+
+paths:
+  betas: data/ns_results/betas_0_7308.csv
+  yield_curve: data/inputs/yield_curve.xlsx
+  macro: data/inputs/macro_updated.xlsx
+  iv_train: Problem_1_IV_train.xlsx
+
+nelson_siegel:
+  lambda: 0.7308
+  beta_cols: [beta0, beta1, beta2]
+  start_date: 2019-03-01
+  freq: MS
+
+yield_curve:
+  cols: [ON, 1W, 2W, 1M, 2M, 3M, 6M, 1Y, 2Y]
+
+macro:
+  cols: [cbr, inf, observed_inf, expected_inf, usd, moex, brent, vix]
+
+iv:
+  pca_components: 3
+
+splits:
+  val_size: 6
+  test_size: 6
+
+forecast:
+  start: 2025-10-01
+  periods: 6
+  freq: MS
+
+arima:
+  p_grid: [0, 1, 2, 3]
+  q_grid: [0, 1, 2]
+  clip_n_sigma: 2.0
+
+var:
+  max_lags: 3
+  obs_per_lag_min: 6
+
+ensemble:
+  w_arima: 0.34
+  w_var: 0.33
+  w_kalman: 0.33
+
+metric:
+  w_on: 0.4
+  w_rest_total: 0.6
+  delta: 0.5
+
+validation:
+  yield_min: -2.0
+  yield_max: 60.0
+  warn_min: 0.0
+  warn_max: 50.0

@@ -1,38 +1,83 @@
-# DONE 09.04 8am:
+# MacroHack Yield Forecast Pipeline
 
-- VAR (with exogenous and endogenous predictors)   => type ONE is better
-- ARIMA + ARIMAX                                   => probably ARIMA, but rethink
-- AR + ARX                                         (ARIMA is better)
+Набор скриптов для перезапуска проекта с нуля: расчет факторов кривой доходности, построение прогнозных моделей и генерация итогового 6-месячного прогноза по заданию MacroHack.
 
-# To be done:
-- Reconsider macros - why?
-  - VAR gets higher above the actual
-  - ARIMA gets higher at higher maturity
+## Структура проекта
 
+- `code4.py` — полный единый скрипт пайплайна (рекомендуемый запуск).
+- `code3.py` — резервный вариант.
+- `main.py` — единая точка запуска.
+- `macrohack_pipeline_demo.ipynb` — быстрый запуск и проверка результатов в Jupyter.
 
+- `data/` — исходные файлы.
+- `outputs/` — итоговые графики и таблицы диагностики.
+- `figures/` — графики.
 
+## Быстрый старт с `uv`
 
-# Планы на будущее 08.04 8am:
+### Установка `uv`
 
-### Доп данные
-- есть пропуски в ожиданиях инфляции - как заполнить ?
-- индекс экономической активности (промышленное производство) ?
-- Нефть (urals/brent?) ?
-- прочитать про факторы в других статьях
-- прописать почему каждый фактор важен для моделирования
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
 
-### Фидбэк нада
-- узнать, какая из моделей лучше - без фильтера Келмана или с ним
+### Подготовка окружения
 
-### Модели дальше строим
-  - *Priority 1:*
-      - VAR
-      - Quantile Regression evaluated at the median (de Rezende, R. B. (2011) - https://sci-hub.ru/10.2139/ssrn.1290741)
-  - *Priority 2:*
-      - расширение NS с макрофакторами (FADNS)
-  - *Priority 3:*
-      - комбинация прогнозов с весами, обратными к ошибке прошлых периодов, дает лучший результат (Penikas, 2008 - too old?)
-      - Random Walk - кажется, простая модель
+```bash
+uv init
+uv sync
+source .venv/bin/activate
+uv pip install -r requirements.txt
+```
 
-### А дальше?
-- Кросс-валидация
+Если `requirements.txt` ещё отсутствует, сначала установите минимальные зависимости, затем зафиксируйте их:
+
+```bash
+uv pip install numpy pandas scipy statsmodels scikit-learn matplotlib
+uv pip freeze > requirements.txt
+```
+
+### Запуск пайплайна (обновлено: единый скрипт в `code4.py`)
+
+```bash
+# Новый единый запуск из code4.py
+uv run python code4.py
+
+# или через entrypoints
+uv run python main.py
+```
+
+В Jupyter:
+
+```bash
+jupyter notebook macrohack_pipeline_demo.ipynb
+```
+
+## Что будет создано после запуска
+
+- `Problem_1_yield_curve_predict.xlsx` — финальный сабмит (M1 и M2).
+- `outputs/final_yc_forecasts.png` — график прогнозов кривых.
+- `outputs/backtest_per_tenor.png` — график back-test.
+- `outputs/tournament_rmse.png` — сводка качества всех моделей (M1/M2/VAR/Svensson/ RW).
+- `outputs/macro_pca_diagnostics.png` — диагностика PCA по макро/IV факторам.
+- `outputs/svensson_betas.png` — параметры Svensson betas.
+
+## Метрики качества
+
+- `weighted_rmse` — взвешенный RMSE по тендерам как в задании хакатона.
+  - веса: `ON=0.4`, суммарно по остальным — `0.6`.
+- `rmse_total = 0.5 * RMSE_M1 + 0.5 * RMSE_M2`.
+  - Если есть обе версии модели (без IV и с IV), для ранжирования используется эта метрика.
+  - Если доступна только одна версия — используется ее RMSE.
+
+## Примечание по качеству экспериментов
+
+- Проект собран как единый скрипт: легко запускать end-to-end.
+- Все этапы воспроизводимы: одинаковые входные данные дают одинаковый результат.
+- Гибко дорабатывается через явные блоки в `code4.py`.
+
+## Заметки по текущим идеям (архив)
+
+- Проверить альтернативы макро переменным и качество их заполнения (включая инфляционные ожидания).
+- Продолжить сравнение VAR и ARIMA-семейств по поведению на длинных тендерах.
+- Отдельно протестировать влияние Kalman-фильтра по каждой факторной схеме.
