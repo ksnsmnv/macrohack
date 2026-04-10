@@ -249,22 +249,6 @@ def compute_weighted_rmse_curve(
     return float(np.sqrt(max(wmse, 0.0)))
 
 
-def per_tenor_rmse_row(
-    df_actual: pd.DataFrame,
-    df_fc: pd.DataFrame,
-    cols: List[str],
-) -> List[float]:
-    """RMSE по каждому тенору на общем индексе бэктеста."""
-    row: List[float] = []
-    for c in cols:
-        if c not in df_actual.columns or c not in df_fc.columns:
-            row.append(float("nan"))
-            continue
-        e = df_actual[c].astype(float) - df_fc[c].astype(float)
-        row.append(float(np.sqrt(np.nanmean(e.values ** 2))))
-    return row
-
-
 # ══════════════════════════════════════════════════════════════════════════════
 # §2  PARAMETERS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -274,7 +258,7 @@ DATA_DIR        = PROJECT_ROOT / "data"
 BETAS_PATH      = DATA_DIR / "ns_results" / "betas_0_7308.csv"
 YC_PATH         = DATA_DIR / "inputs"     / "yield_curve.xlsx"
 MACRO_PATH      = DATA_DIR / "inputs"     / "macro_updated.xlsx"
-IV_PATH         = DATA_DIR / "inputs"     / "Problem_1_IV_train.xlsx"
+IV_PATH         = PROJECT_ROOT            / "Problem_1_IV_train.xlsx"
 OUTPUT_DIR      = Path(os.getenv("CODE4_OUTPUT_DIR", str(PROJECT_ROOT / "outputs")))
 SUBMISSION_PATH = Path(
     os.getenv("CODE4_SUBMISSION_PATH",
@@ -296,13 +280,17 @@ MATURITY_MAP = {
 }
 
 MACRO_COLS_CANDIDATE = [
-    "cbr", "inf", 
+    "cbr", 
+    "inf", 
     "observed_inf", 
     "expected_inf",
-    "usd", "moex", 
-    "brent", "urals", 
-    "vix", "GPR",
-    "GDP index"
+    "usd", 
+    "moex", 
+    "brent", 
+    "vix",
+    # "GDP index", 
+    "urals", 
+    # "GPR",
 ]
 MACRO_PCA_COMPONENTS = 3
 
@@ -376,26 +364,6 @@ VAR_SPECS: List[Dict] = [
     {"tag": "VAR_SV_only_iv1",      "beta": "sv", "macro": "none", "iv": True,  "iv_n": 1},
 ]
 
-# Явные семейства для отбора: лист M1 = лучшая без IV, M2 = лучшая с IV (не две глобально лучшие).
-NO_IV_MODEL_TAGS = [
-    "ARIMA_NS",
-    "SV_ARIMA",
-    "VAR_NS_only",
-    "VAR_NS_macro_pca",
-    "VAR_SV_only",
-    "VAR_SV_macro_pca",
-]
-IV_MODEL_TAGS = [
-    "ARIMAX_NS_macro_pca_iv1",
-    "VAR_NS_macro_pca_iv1",
-    "VAR_NS_only_iv1",
-    "VAR_SV_macro_pca_iv1",
-    "VAR_SV_only_iv1",
-]
-
-# Дополнительный прогноз (помимо листов M1/M2): визуализация как у победителей.
-EXTRA_VAR_FORECAST_TAG = "VAR_SV_macro_pca_iv1"
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # §3  DATA LOADING
@@ -427,7 +395,7 @@ def load_macro() -> pd.DataFrame:
         None,
     )
     if date_col is None:
-        raise ValueError("macro_updated_3.xlsx: no date column")
+        raise ValueError("macro_updated.xlsx: no date column")
     df = df.rename(columns={date_col: "date"})
     df["date"] = pd.to_datetime(df["date"])
     df = df.set_index("date").sort_index()
@@ -1402,7 +1370,7 @@ def _record(tag, yc_fc, is_m2=False):
     r = compute_weighted_rmse_curve(yc_actual_bt, yc_fc, yc_cols)
     yc_forecasts[tag] = yc_fc
     (results_m2 if is_m2 else results_m1)[tag] = r
-    cat = "IV" if is_m2 else "no-IV"
+    cat = "M2" if is_m2 else "M1"
     print(f"  {tag:<32}  {cat}: {r:.5f}  {_vs_rw(r)}")
     return r
 
@@ -1475,70 +1443,57 @@ for spec in VAR_SPECS:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# §18  BEST MODEL SELECTION  [F8]  — по семействам: без IV / с IV
+# §18  BEST MODEL SELECTION  [F8]
 # ══════════════════════════════════════════════════════════════════════════════
 
-def select_best_in_family(
+def select_best(
     results: Dict[str, float],
-    family_tags: List[str],
     rmse_rw: float,
-    *,
     fallback_tag: str,
     force_tag: str | None = None,
-    family_label: str = "family",
+    cat: str = "M1",
 ) -> Tuple[str, float]:
     """
-    Внутри семейства (только теги из family_tags): лучшая RMSE среди тех, кто
-    лучше RW; иначе лучшая внутри семьи. Не подменяем семейство «с IV» моделью без IV.
+    [F8] Select best model among those beating RW.
+    If NO model beats RW, use the fallback (best M1 for M2, or RW itself).
     """
-    pool = {
-        t: float(results[t])
-        for t in family_tags
-        if t in results and not np.isnan(results[t])
-    }
     if force_tag:
         if force_tag == "RW":
-            return "RW", rmse_rw
-        if force_tag in pool:
-            return force_tag, pool[force_tag]
+            return force_tag, rmse_rw
+        if force_tag in results and not np.isnan(results[force_tag]):
+            return force_tag, results[force_tag]
         print(
-            f"  [F8] Forced {family_label} model '{force_tag}' unavailable "
-            f"→ auto pick in family"
+            f"  [F8] Forced {cat} model '{force_tag}' unavailable or NaN "
+            f"→ fallback '{fallback_tag}'"
         )
-    if not pool:
-        print(f"  [F8] Empty {family_label} pool → '{fallback_tag}'")
-        fb = results.get(fallback_tag, rmse_rw) if fallback_tag in results else rmse_rw
-        return (fallback_tag if fallback_tag in results else "RW"), float(fb)
-
-    beating = {t: r for t, r in pool.items() if r < rmse_rw}
-    if beating:
-        tag = min(beating, key=beating.get)
-        return tag, beating[tag]
-
-    tag = min(pool, key=pool.get)
-    print(
-        f"  [F8] No {family_label} model beats RW → best in family '{tag}' "
-        f"RMSE={pool[tag]:.5f}"
-    )
-    return tag, pool[tag]
+    beats = {t: r for t, r in results.items()
+             if not np.isnan(r) and r < rmse_rw}
+    if beats:
+        tag  = min(beats, key=beats.get)
+        return tag, beats[tag]
+    else:
+        # [F8] No model beats RW — use fallback
+        fb_r = results.get(fallback_tag, rmse_rw)
+        print(f"  [F8] No model beats RW → using fallback '{fallback_tag}'"
+              f"  RMSE={fb_r:.5f}")
+        return fallback_tag, fb_r
 
 
-# Лист M1 Excel = лучшая среди моделей без IV; M2 = лучшая среди моделей с IV.
-best_m1_tag, rmse_m1_bt = select_best_in_family(
+# M1 fallback = random walk (if even the best M1 can't beat RW)
+best_m1_tag, rmse_m1_bt = select_best(
     results_m1,
-    NO_IV_MODEL_TAGS,
     rmse_rw,
-    fallback_tag="RW",
+    "RW",
     force_tag=CODE4_FORCE_M1_TAG or None,
-    family_label="no-IV",
+    cat="M1",
 )
-best_m2_tag, rmse_m2_bt = select_best_in_family(
+# M2 fallback = best M1 model (if no M2 beats RW, submit best M1 for both)
+best_m2_tag, rmse_m2_bt = select_best(
     results_m2,
-    IV_MODEL_TAGS,
     rmse_rw,
-    fallback_tag="RW",
+    best_m1_tag,
     force_tag=CODE4_FORCE_M2_TAG or None,
-    family_label="IV",
+    cat="M2",
 )
 
 # Store RW forecast so it can be used as fallback
@@ -1547,8 +1502,8 @@ yc_forecasts["RW"] = yc_rw_bt
 rmse_tot_bt = 0.5 * rmse_m1_bt + 0.5 * rmse_m2_bt
 
 print("\n" + "─" * 70)
-print(f"  Best no-IV (sheet M1): {best_m1_tag:<26}  RMSE={rmse_m1_bt:.5f}  {_vs_rw(rmse_m1_bt)}")
-print(f"  Best with-IV (sheet M2): {best_m2_tag:<22}  RMSE={rmse_m2_bt:.5f}  {_vs_rw(rmse_m2_bt)}")
+print(f"  Best M1: {best_m1_tag:<32}  RMSE={rmse_m1_bt:.5f}  {_vs_rw(rmse_m1_bt)}")
+print(f"  Best M2: {best_m2_tag:<32}  RMSE={rmse_m2_bt:.5f}  {_vs_rw(rmse_m2_bt)}")
 print(f"  RMSEtotal (back-test): {rmse_tot_bt:.5f}")
 
 
@@ -1624,18 +1579,11 @@ def _final_yc(tag: str) -> pd.DataFrame:
 
 yc_m1_final = nan_safe_yc(_final_yc(best_m1_tag), df_yc, yc_cols)
 yc_m2_final = nan_safe_yc(_final_yc(best_m2_tag), df_yc, yc_cols)
-yc_extra_var_final = nan_safe_yc(_final_yc(EXTRA_VAR_FORECAST_TAG), df_yc, yc_cols)
-rmse_extra_bt = float(results_m2.get(EXTRA_VAR_FORECAST_TAG, float("nan")))
 
 print(f"\n  M1 [{best_m1_tag}]:")
 print(yc_m1_final.to_string())
 print(f"\n  M2 [{best_m2_tag}]:")
 print(yc_m2_final.to_string())
-print(
-    f"\n  Extra [{EXTRA_VAR_FORECAST_TAG}] "
-    f"(бэктест RMSE={rmse_extra_bt:.5f}):"
-)
-print(yc_extra_var_final.to_string())
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1650,64 +1598,35 @@ if not CODE4_SKIP_OUTPUT:
 # §21  VISUALISATION
 # ══════════════════════════════════════════════════════════════════════════════
 
-# ── Tournament: bar RMSE + heatmap RMSE по тенорам ───────────────────────────
+# ── Tournament bar chart ──────────────────────────────────────────────────────
 if not CODE4_SKIP_PLOTS:
-    from matplotlib.patches import Patch
-
     all_res = {**results_m1, **results_m2, "RW_baseline": rmse_rw}
-    tags = sorted(all_res, key=all_res.get)
-    vals = [all_res[t] for t in tags]
-    model_tags = [t for t in tags if t != "RW_baseline"]
-    iv_tag_set = set(IV_MODEL_TAGS)
+    tags  = sorted(all_res, key=all_res.get)
+    vals  = [all_res[t] for t in tags]
 
     def _color(t):
-        if t == "RW_baseline":
-            return "#e74c3c"
-        if t in (best_m1_tag, best_m2_tag):
-            return "#2ecc71"
-        if t == EXTRA_VAR_FORECAST_TAG:
-            return "#e67e22"
-        if t in iv_tag_set:
-            return "#9b59b6"
+        if t == "RW_baseline":          return "#e74c3c"
+        if t in (best_m1_tag, best_m2_tag): return "#2ecc71"
+        if t in results_m2:             return "#9b59b6"
         return "#3498db"
 
-    h = max(6, len(tags) * 0.45)
-    fig, (ax_bar, ax_hm) = plt.subplots(
-        1, 2, figsize=(18, h),
-        gridspec_kw={"width_ratios": [1.2, 1.0], "wspace": 0.28},
-    )
-    bars = ax_bar.barh(tags, vals, color=[_color(t) for t in tags],
-                       edgecolor="white", linewidth=0.5)
-    ax_bar.axvline(rmse_rw, color="#e74c3c", ls="--", lw=1.2)
+    fig, ax = plt.subplots(figsize=(16, max(6, len(tags) * 0.45)))
+    bars = ax.barh(tags, vals, color=[_color(t) for t in tags],
+                   edgecolor="white", linewidth=0.5)
+    ax.axvline(rmse_rw, color="#e74c3c", ls="--", lw=1.2)
     for bar, v in zip(bars, vals):
-        ax_bar.text(v + 0.005, bar.get_y() + bar.get_height() / 2,
-                    f"{v:.4f}", va="center", fontsize=7)
-    ax_bar.set_xlabel("Weighted RMSE (back-test)")
-    ax_bar.set_title(
-        "Tournament: all models (trainval→test)\n"
-        "(blue = no IV, purple = with IV)",
-        fontsize=10,
-    )
-    ax_bar.legend(handles=[
+        ax.text(v + 0.005, bar.get_y() + bar.get_height()/2,
+                f"{v:.4f}", va="center", fontsize=7)
+    ax.set_xlabel("Weighted RMSE (back-test)")
+    ax.set_title("Tournament: all model RMSE  (trainval→test)", fontsize=11)
+    from matplotlib.patches import Patch
+    ax.legend(handles=[
         Patch(color="#e74c3c", label="RW baseline"),
-        Patch(color="#2ecc71", label="Selected (M1 no-IV / M2 IV)"),
-        Patch(color="#e67e22", label=f"Extra: {EXTRA_VAR_FORECAST_TAG}"),
-        Patch(color="#3498db", label="Candidates without IV"),
-        Patch(color="#9b59b6", label="Candidates with IV"),
-    ], fontsize=8, loc="lower right")
-    ax_bar.invert_yaxis()
-
-    mat = np.array([
-        per_tenor_rmse_row(yc_actual_bt, yc_forecasts[t], yc_cols)
-        for t in model_tags
-    ])
-    im = ax_hm.imshow(mat, aspect="auto", cmap="YlOrRd")
-    ax_hm.set_yticks(np.arange(len(model_tags)))
-    ax_hm.set_yticklabels(model_tags, fontsize=7)
-    ax_hm.set_xticks(np.arange(len(yc_cols)))
-    ax_hm.set_xticklabels(yc_cols, rotation=45, ha="right", fontsize=8)
-    ax_hm.set_title("RMSE by tenor (back-test)", fontsize=10)
-    plt.colorbar(im, ax=ax_hm, fraction=0.046, pad=0.04)
+        Patch(color="#2ecc71", label="Selected (best M1/M2)"),
+        Patch(color="#3498db", label="M1 candidate"),
+        Patch(color="#9b59b6", label="M2 candidate"),
+    ], fontsize=8)
+    ax.invert_yaxis()
     plt.tight_layout()
     plt.savefig(OUTPUT_DIR / "tournament_rmse.png", dpi=150)
     plt.show()
@@ -1731,8 +1650,8 @@ if not CODE4_SKIP_PLOTS:
     fig, axes = plt.subplots(3, 3, figsize=(15, 10))
     fig.suptitle(
         f"Back-test {test_idx[0]:%Y-%m}–{test_idx[-1]:%Y-%m}\n"
-        f"M1={best_m1_tag}({rmse_m1_bt:.4f})  M2={best_m2_tag}({rmse_m2_bt:.4f})  "
-        f"{EXTRA_VAR_FORECAST_TAG}({rmse_extra_bt:.4f})  RW({rmse_rw:.4f})",
+        f"M1={best_m1_tag}({rmse_m1_bt:.4f})  "
+        f"M2={best_m2_tag}({rmse_m2_bt:.4f})  RW({rmse_rw:.4f})",
         fontsize=9,
     )
     t  = list(range(TEST_SIZE))
@@ -1745,72 +1664,30 @@ if not CODE4_SKIP_PLOTS:
         ax.plot(t, _s(yc_actual_bt),               "k-o",  ms=4, lw=1.8, label="Actual")
         ax.plot(t, _s(yc_forecasts[best_m1_tag]),  "b--o", ms=3, lw=1.2, label="M1")
         ax.plot(t, _s(yc_forecasts[best_m2_tag]),  "r--o", ms=3, lw=1.2, label="M2")
-        ax.plot(
-            t, _s(yc_forecasts[EXTRA_VAR_FORECAST_TAG]),
-            linestyle="-.", color="#e67e22", marker="^", ms=3, lw=1.3,
-            label="VAR_SV+IV",
-        )
         ax.plot(t, _s(yc_rw_bt),                   "g:s",  ms=3, lw=1.0, label="RW")
         ax.set_title(col, fontsize=9)
         ax.set_xticks(t); ax.set_xticklabels(tl, rotation=45, fontsize=7)
         ax.grid(True, alpha=0.2)
         if col == "ON":
-            ax.legend(fontsize=6)
+            ax.legend(fontsize=7)
     plt.tight_layout()
     plt.savefig(OUTPUT_DIR / "backtest_per_tenor.png", dpi=150)
     plt.show()
 
-    # ── Тот же бэктест: только победители + VAR_SV_macro_pca_iv1 (как отдельный лист) ─
-    fig, axes = plt.subplots(3, 3, figsize=(15, 10))
-    fig.suptitle(
-        f"Back-test (M1, M2, {EXTRA_VAR_FORECAST_TAG})\n"
-        f"{test_idx[0]:%Y-%m}–{test_idx[-1]:%Y-%m}",
-        fontsize=10,
-    )
-    for ax, col in zip(axes.flat, yc_cols):
-        def _s(df, c=col):
-            return (df[c].values.astype(float) if c in df.columns
-                    else np.full(TEST_SIZE, np.nan))
-        ax.plot(t, _s(yc_actual_bt), "k-o", ms=4, lw=1.8, label="Actual")
-        ax.plot(t, _s(yc_forecasts[best_m1_tag]), "b--o", ms=3, lw=1.2, label="M1")
-        ax.plot(t, _s(yc_forecasts[best_m2_tag]), "r--o", ms=3, lw=1.2, label="M2")
-        ax.plot(
-            t, _s(yc_forecasts[EXTRA_VAR_FORECAST_TAG]),
-            linestyle="-.", color="#e67e22", marker="^", ms=3, lw=1.3,
-            label="VAR_SV+IV",
-        )
-        ax.set_title(col, fontsize=9)
-        ax.set_xticks(t); ax.set_xticklabels(tl, rotation=45, fontsize=7)
-        ax.grid(True, alpha=0.2)
-        if col == "ON":
-            ax.legend(fontsize=6)
-    plt.tight_layout()
-    plt.savefig(OUTPUT_DIR / "backtest_per_tenor_winners_and_var_sv_iv.png", dpi=150)
-    plt.show()
-
     # ── Forecast YC shape per month ───────────────────────────────────────────────
     x = np.arange(len(yc_cols))
-    fig, axes = plt.subplots(2, 3, figsize=(16, 8))
-    fig.suptitle(
-        "Forecast YC  2025-10→2026-03  M1, M2 & "
-        + EXTRA_VAR_FORECAST_TAG,
-        fontsize=11,
-    )
+    fig, axes = plt.subplots(2, 3, figsize=(15, 8))
+    fig.suptitle("Forecast YC  2025-10→2026-03  M1 vs M2", fontsize=12)
     for ax, dt in zip(axes.flat, TRUE_FUTURE_INDEX):
         ax.plot(x, yc_m1_final.loc[dt, yc_cols].astype(float),
                 "b-o", ms=4, lw=1.5, label="M1")
         ax.plot(x, yc_m2_final.loc[dt, yc_cols].astype(float),
                 "r-o", ms=4, lw=1.5, label="M2")
-        ax.plot(
-            x, yc_extra_var_final.loc[dt, yc_cols].astype(float),
-            linestyle="-", color="#e67e22", marker="^", ms=4, lw=1.5,
-            label="VAR_SV+IV",
-        )
         ax.set_xticks(x); ax.set_xticklabels(yc_cols, rotation=45, fontsize=8)
         ax.set_title(dt.strftime("%Y-%m"), fontsize=9)
         ax.grid(True, alpha=0.2)
         if dt == TRUE_FUTURE_INDEX[0]:
-            ax.legend(fontsize=7)
+            ax.legend(fontsize=8)
     plt.tight_layout()
     plt.savefig(OUTPUT_DIR / "final_yc_forecasts.png", dpi=150)
     plt.show()
@@ -1833,23 +1710,22 @@ print()
 print(f"  Back-test ({test_idx[0]:%Y-%m}→{test_idx[-1]:%Y-%m}):")
 print(f"    Random Walk  = {rmse_rw:.5f}")
 print()
-print("  No-IV family (sorted) — sheet M1:")
+print("  M1 results (sorted):")
 for t, r in sorted(results_m1.items(), key=lambda x: x[1]):
     star = " ◀ SELECTED" if t == best_m1_tag else ""
     print(f"    {t:<34} = {r:.5f}  {_vs_rw(r)}{star}")
 print()
-print("  With-IV family (sorted) — sheet M2:")
+print("  M2 results (sorted):")
 for t, r in sorted(results_m2.items(), key=lambda x: x[1]):
     star = " ◀ SELECTED" if t == best_m2_tag else ""
     print(f"    {t:<34} = {r:.5f}  {_vs_rw(r)}{star}")
 print()
-print(f"  Selected no-IV (M1): {best_m1_tag}  RMSE={rmse_m1_bt:.5f}")
-print(f"  Selected IV (M2): {best_m2_tag}  RMSE={rmse_m2_bt:.5f}")
+print(f"  Selected M1 : {best_m1_tag}  RMSE={rmse_m1_bt:.5f}")
+print(f"  Selected M2 : {best_m2_tag}  RMSE={rmse_m2_bt:.5f}")
 print(f"  RMSEtotal   : {rmse_tot_bt:.5f}")
 print()
 print(f"  NaN M1={int(yc_m1_final.isna().sum().sum())}"
-      f"  NaN M2={int(yc_m2_final.isna().sum().sum())}"
-      f"  NaN {EXTRA_VAR_FORECAST_TAG}={int(yc_extra_var_final.isna().sum().sum())}")
+      f"  NaN M2={int(yc_m2_final.isna().sum().sum())}")
 print(f"  Submission  : {SUBMISSION_PATH}")
 print("=" * 70)
 
